@@ -336,7 +336,9 @@ export function MarksGrid({
           </Badge>
           <span className="text-sm font-medium">{offering.name}</span>
           {offering.isElective && (
-            <Badge variant="secondary">Elective · {rows.length} taking it</Badge>
+            <Badge variant="secondary">
+              Elective · {rows.length} taking it
+            </Badge>
           )}
           <Badge variant={grid.published ? "outline" : "secondary"}>
             {grid.published ? "Published" : "Not published"}
