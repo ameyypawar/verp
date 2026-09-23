@@ -65,14 +65,39 @@ const LABEL: Record<Component, string> = {
 /**
  * Why a subject's roster cannot change right now, or null if it can.
  *
- * A locked component says every student on the roster has that mark. Putting
- * somebody on the subject would make that untrue while it still reads as
- * finished, so the roster stays as the lock found it until the lock is
- * reopened.
+ * Published results were checked against the roster as it stood, and a locked
+ * component says every student on the roster has that mark. Changing who takes
+ * the subject under either would make that untrue while it still reads as
+ * finished, so the roster stays put until the results are withdrawn and the
+ * locks reopened. Reopening the locks alone does not unpublish.
  */
-export function rosterFrozenReason(locked: Component[]): string | null {
-  if (locked.length === 0) return null
-  const names = locked.map((c) => LABEL[c]).join(", ")
-  const one = locked.length === 1
+export function rosterFrozenReason(subject: {
+  published: boolean
+  locked: Component[]
+}): string | null {
+  if (subject.published) {
+    return "Its results are published. Withdraw them on the Marks tab before changing who takes it."
+  }
+  if (subject.locked.length === 0) return null
+  const names = subject.locked.map((c) => LABEL[c]).join(", ")
+  const one = subject.locked.length === 1
   return `${names} ${one ? "is" : "are"} locked for this subject. Reopen ${one ? "it" : "them"} on the Marks tab before changing who takes it.`
+}
+
+/**
+ * Why a subject with nobody on its roster cannot be locked or published.
+ *
+ * "Every student has this mark" is true of an empty list without anybody
+ * having marked anything. That let an elective nobody had been put on yet be
+ * locked and published — a result for nobody, behind a lock that then froze its
+ * roster empty.
+ */
+export function emptyRosterMessage(
+  isElective: boolean,
+  action: "Lock" | "Publish"
+): string {
+  const verb = action.toLowerCase()
+  return isElective
+    ? `Nobody is taking this elective yet. Put its students on it on the Electives tab, then ${verb}.`
+    : `This class has no students yet, so there is nothing to ${verb}.`
 }

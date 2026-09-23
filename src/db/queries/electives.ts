@@ -75,11 +75,14 @@ export async function enrollInElective(input: {
   courseOfferingId: string
   studentIds: string[]
 }) {
-  if (input.studentIds.length === 0) return
+  // Each student once: the same key twice in one INSERT ... ON CONFLICT DO
+  // UPDATE fails the whole statement.
+  const studentIds = [...new Set(input.studentIds)]
+  if (studentIds.length === 0) return
   await db
     .insert(electiveEnrollments)
     .values(
-      input.studentIds.map((studentId) => ({
+      studentIds.map((studentId) => ({
         courseOfferingId: input.courseOfferingId,
         studentId,
       }))
@@ -106,6 +109,25 @@ export async function removeFromElective(input: {
         eq(electiveEnrollments.studentId, input.studentId)
       )
     )
+}
+
+/**
+ * Take everybody off an elective, as when it goes back to being taught to the
+ * whole class. Its list ends there rather than waiting, unseen, to come back
+ * the next time the subject is made an elective.
+ */
+export async function clearElective(courseOfferingId: string) {
+  const rows = await db
+    .update(electiveEnrollments)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(
+      and(
+        eq(electiveEnrollments.courseOfferingId, courseOfferingId),
+        eq(electiveEnrollments.isActive, true)
+      )
+    )
+    .returning({ id: electiveEnrollments.id })
+  return rows.length
 }
 
 /**

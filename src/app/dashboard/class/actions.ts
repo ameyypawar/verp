@@ -18,6 +18,7 @@ import {
   validateMarks,
 } from "@/lib/marks-integrity"
 import {
+  emptyRosterMessage,
   hasRecordedMark,
   rosterFrozenReason,
   studentsWithMarks,
@@ -56,6 +57,7 @@ import {
   removeStudentFromBatch,
 } from "@/db/queries/batches"
 import {
+  clearElective,
   deleteBlankMarks,
   enrollInElective,
   getOfferingRoster,
@@ -587,7 +589,9 @@ export async function saveMarksAction(input: {
  *
  * The roster is the subject's own: for an elective, the students taking it.
  * Asked of the whole class, an elective could never be locked, because the
- * students who chose something else will never have a mark in it.
+ * students who chose something else will never have a mark in it. Whether it
+ * is empty comes back too: an empty roster has nobody missing, and would
+ * otherwise pass as complete.
  */
 async function rosterIncomplete(
   offering: { id: string; isElective: boolean },
@@ -599,11 +603,11 @@ async function rosterIncomplete(
     getMarksForOffering(offering.id),
   ])
   const byStudent = new Map(existing.map((m) => [m.studentId, m]))
-  return incompleteStudents(
-    roster.map((r) => r.id),
-    byStudent,
-    components
-  )
+  const ids = roster.map((r) => r.id)
+  return {
+    empty: ids.length === 0,
+    missing: incompleteStudents(ids, byStudent, components),
+  }
 }
 
 export async function setMarksLockAction(input: {
@@ -643,11 +647,12 @@ export async function setMarksLockAction(input: {
       // Locking says "these figures are final". It cannot be true of a
       // component nobody has entered — and once locked, publication accepted
       // it, so a blank register reached students as a completed result.
-      const missing = await rosterIncomplete(offering, cls.classKey, [
-        component,
-      ])
-      if (missing.length > 0) {
-        return { error: incompleteMessage(missing, "Lock") }
+      const check = await rosterIncomplete(offering, cls.classKey, [component])
+      if (check.empty) {
+        return { error: emptyRosterMessage(offering.isElective, "Lock") }
+      }
+      if (check.missing.length > 0) {
+        return { error: incompleteMessage(check.missing, "Lock") }
       }
     }
 
@@ -938,9 +943,12 @@ export async function setPublishedAction(input: {
       // this rule exist — the live EC33T offering was locked and published over
       // an almost entirely blank register, and every student behind it was
       // shown a finished semester worth zero credits.
-      const missing = await rosterIncomplete(offering, cls.classKey, required)
-      if (missing.length > 0) {
-        return { error: incompleteMessage(missing, "Publish") }
+      const check = await rosterIncomplete(offering, cls.classKey, required)
+      if (check.empty) {
+        return { error: emptyRosterMessage(offering.isElective, "Publish") }
+      }
+      if (check.missing.length > 0) {
+        return { error: incompleteMessage(check.missing, "Publish") }
       }
     }
 
@@ -973,10 +981,16 @@ export async function setPublishedAction(input: {
 const ELECTIVE_OWNER =
   "Only the class coordinator, the HOD, or an admin can decide who takes an elective."
 
-/** rosterFrozenReason for one subject, read from its current locks. */
-async function rosterFrozen(offeringId: string) {
-  const locked = await getLockedComponents(offeringId)
-  return rosterFrozenReason(locked.map((l) => l.component))
+/** rosterFrozenReason for one subject, read from its publication and locks. */
+async function rosterFrozen(offering: {
+  id: string
+  publishedAt: Date | null
+}) {
+  const locked = await getLockedComponents(offering.id)
+  return rosterFrozenReason({
+    published: offering.publishedAt != null,
+    locked: locked.map((l) => l.component),
+  })
 }
 
 /**
@@ -988,6 +1002,10 @@ async function rosterFrozen(offeringId: string) {
  * which is the state of a subject taught as whole-class by mistake. The empty
  * rows the whole-class grid saved for everybody else are cleared, because an
  * empty row still lists the subject on that student's own record.
+ *
+ * Going back to the whole class ends the elective's list rather than parking
+ * it. Made an elective again, the subject starts from whoever has marks then,
+ * which is what the coordinator is told, not from a list nobody could see.
  */
 export async function setElectiveAction(input: {
   offeringId: string
@@ -1005,11 +1023,11 @@ export async function setElectiveAction(input: {
     }
     if (offering.isElective === input.elective) return { error: null }
 
-    const frozen = await rosterFrozen(input.offeringId)
+    const frozen = await rosterFrozen(offering)
     if (frozen) return { error: frozen }
 
-    let enrolled = 0
-    let cleared = 0
+    const courseCode = offering.course.courseCode
+    let details: Record<string, unknown>
     if (input.elective) {
       const existing = await getMarksForOffering(input.offeringId)
       const marked = studentsWithMarks(
@@ -1019,8 +1037,10 @@ export async function setElectiveAction(input: {
         courseOfferingId: input.offeringId,
         studentIds: marked,
       })
-      cleared = await deleteBlankMarks(input.offeringId)
-      enrolled = marked.length
+      const cleared = await deleteBlankMarks(input.offeringId)
+      details = { courseCode, enrolled: marked.length, cleared }
+    } else {
+      details = { courseCode, released: await clearElective(input.offeringId) }
     }
     await setOfferingElective(input.offeringId, input.elective)
     await createAuditLog({
@@ -1028,7 +1048,7 @@ export async function setElectiveAction(input: {
       actorId: user!.id,
       targetType: "offering",
       targetId: input.offeringId,
-      details: { courseCode: offering.course.courseCode, enrolled, cleared },
+      details,
     })
     revalidatePath(`/dashboard/class/${offering.classId}/electives`)
     revalidatePath(`/dashboard/class/${offering.classId}/marks`)
@@ -1063,19 +1083,18 @@ export async function enrollElectiveAction(input: {
           "This subject is taught to the whole class. Make it an elective first.",
       }
     }
-    const frozen = await rosterFrozen(input.offeringId)
+    const frozen = await rosterFrozen(offering)
     if (frozen) return { error: frozen }
 
+    // The same id twice is still one student.
+    const studentIds = [...new Set(input.studentIds)]
     const roster = new Set(
       (await getStudentsByClassKeys([cls.classKey])).map((s) => s.id)
     )
-    const scope = studentsInClass(roster, input.studentIds)
+    const scope = studentsInClass(roster, studentIds)
     if (!scope.ok) return { error: scope.reason }
 
-    await enrollInElective({
-      courseOfferingId: input.offeringId,
-      studentIds: input.studentIds,
-    })
+    await enrollInElective({ courseOfferingId: input.offeringId, studentIds })
     await createAuditLog({
       action: "elective.enrolled",
       actorId: user!.id,
@@ -1083,7 +1102,7 @@ export async function enrollElectiveAction(input: {
       targetId: input.offeringId,
       details: {
         courseCode: offering.course.courseCode,
-        count: input.studentIds.length,
+        count: studentIds.length,
       },
     })
     revalidatePath(`/dashboard/class/${offering.classId}/electives`)
@@ -1116,7 +1135,7 @@ export async function removeFromElectiveAction(input: {
     if (!canAllocate(user!, offering.classId, cls.departmentCode)) {
       return { error: ELECTIVE_OWNER }
     }
-    const frozen = await rosterFrozen(input.offeringId)
+    const frozen = await rosterFrozen(offering)
     if (frozen) return { error: frozen }
 
     // The same roster check enrolling makes, as removeFromBatchAction mirrors

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  emptyRosterMessage,
   hasRecordedMark,
   offeringRoster,
   rosterFrozenReason,
@@ -66,6 +67,11 @@ describe("an elective's completeness", () => {
   it("could never be complete measured against the whole class", () => {
     expect(incompleteStudents(cls, marks, all)).toHaveLength(2)
   })
+
+  // Why locking and publishing check for an empty roster on their own.
+  it("reports nobody missing from an empty roster", () => {
+    expect(incompleteStudents([], new Map(), all)).toEqual([])
+  })
 })
 
 describe("hasRecordedMark", () => {
@@ -104,17 +110,42 @@ describe("studentsWithMarks", () => {
 })
 
 describe("rosterFrozenReason", () => {
-  it("lets the roster change while nothing is locked", () => {
-    expect(rosterFrozenReason([])).toBeNull()
+  const open = { published: false, locked: [] as Component[] }
+
+  it("lets the roster change while nothing is locked or published", () => {
+    expect(rosterFrozenReason(open)).toBeNull()
   })
 
   it("names the locked component and where to reopen it", () => {
-    const reason = rosterFrozenReason(["isa"])
+    const reason = rosterFrozenReason({ ...open, locked: ["isa"] })
     expect(reason).toMatch(/^ISA is locked/)
     expect(reason).toContain("Marks tab")
   })
 
   it("names every locked component", () => {
-    expect(rosterFrozenReason(["isa", "ese"])).toMatch(/^ISA, ESE are locked/)
+    const reason = rosterFrozenReason({ ...open, locked: ["isa", "ese"] })
+    expect(reason).toMatch(/^ISA, ESE are locked/)
+  })
+
+  // Reopening the locks does not unpublish: what students can see was checked
+  // against the roster as it stood.
+  it("stays frozen while the results are published, locks or no locks", () => {
+    expect(rosterFrozenReason({ ...open, published: true })).toMatch(
+      /^Its results are published/
+    )
+  })
+})
+
+describe("emptyRosterMessage", () => {
+  it("sends an empty elective to the Electives tab", () => {
+    const lock = emptyRosterMessage(true, "Lock")
+    expect(lock).toMatch(/^Nobody is taking this elective yet/)
+    expect(emptyRosterMessage(true, "Publish")).toMatch(/then publish\.$/)
+  })
+
+  it("says plainly that an empty class has nothing to lock", () => {
+    expect(emptyRosterMessage(false, "Lock")).toBe(
+      "This class has no students yet, so there is nothing to lock."
+    )
   })
 })

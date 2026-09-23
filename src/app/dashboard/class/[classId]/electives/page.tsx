@@ -76,7 +76,10 @@ export default async function ElectivesPage({
           withMarks={studentsWithMarks(
             new Map(marks.map((m) => [m.studentId, m]))
           )}
-          frozen={rosterFrozenReason(locks.map((l) => l.component))}
+          frozen={rosterFrozenReason({
+            published: selected?.publishedAt != null,
+            locked: locks.map((l) => l.component),
+          })}
         />
       </div>
     </>

@@ -19,7 +19,6 @@ import {
 import { getElectiveMemberIds } from "@/db/queries/electives"
 import { canWriteOffering } from "@/lib/allocation"
 import { WHOLE_CLASS } from "@/lib/attendance"
-import { offeringRoster } from "@/lib/electives"
 import { AttendanceClient } from "./client"
 
 type Status = "present" | "absent" | "late" | "excused"
@@ -98,12 +97,24 @@ export default async function AttendancePage({
   const selected = offeringId
     ? offerings.find((o) => o.id === offeringId)
     : undefined
+  // An elective's register is the students taking it, not the division: the
+  // rest of the class is in another lecture, and marking them absent would
+  // count against a subject they never chose. That holds inside a lab batch
+  // too — a lab split into batches before it became an elective keeps its old
+  // assignments, and the save refuses anybody not taking it.
+  const takers = selected?.isElective
+    ? await getElectiveMemberIds(selected.id)
+    : null
+  const onSubject = <T extends { id: string }>(rows: T[]) =>
+    takers ? rows.filter((s) => takers.has(s.id)) : rows
   const practical = !!selected && selected.course.courseType !== "theory"
   const batches = practical
     ? offeringBatches.map((b) => ({
         id: b.id,
         name: b.name,
-        count: b.assignments.filter((a) => a.student.isActive).length,
+        count: b.assignments.filter(
+          (a) => a.student.isActive && (!takers || takers.has(a.student.id))
+        ).length,
       }))
     : []
   const batchId = batches.some((b) => b.id === sp.batch) ? sp.batch! : null
@@ -121,20 +132,9 @@ export default async function AttendancePage({
       ? `/dashboard/class/${classId}/batches?offering=${selected.id}`
       : null
 
-  // An elective's register is the students taking it, not the division: the
-  // rest of the class is in another lecture, and marking them absent would
-  // count against a subject they never chose.
-  const subjectRoster = selected?.isElective
-    ? offeringRoster(
-        selected,
-        classRoster,
-        await getElectiveMemberIds(selected.id)
-      )
-    : classRoster
-
   const rosterQuery: Promise<RosterRow[]> = batchId
-    ? getStudentsInBatch(batchId)
-    : Promise.resolve(needsBatch ? [] : subjectRoster)
+    ? getStudentsInBatch(batchId).then((rows) => onSubject(rows))
+    : Promise.resolve(needsBatch ? [] : onSubject(classRoster))
   const marksQuery: Promise<MarkRow[]> = needsBatch
     ? Promise.resolve([])
     : getAttendanceForSession(classId, date, slot, offeringId, batchId)

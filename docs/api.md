@@ -238,7 +238,8 @@ the class narrowed to the students taking it, checked with `studentsInElective`.
 Deciding who takes it is `canAllocate`, not `canWriteOffering`: the roster is
 what "every student is marked" is measured against, so the teacher entering the
 marks is not the one who can shorten it. It cannot change while a component is
-locked, and a student with a mark in it cannot be taken off.
+locked or the results are published, a student with a mark in it cannot be
+taken off, and an elective with nobody on it cannot be locked or published.
 
 ### Department workspace — `src/app/dashboard/dept/actions.ts`
 

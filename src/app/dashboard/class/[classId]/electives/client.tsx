@@ -148,7 +148,7 @@ export function ElectivesClient({
                 destructive={false}
                 disabled={pending || locked}
                 title={`Teach ${selected.code} to the whole class?`}
-                description={`All ${roster.length} students in ${classLabel} go back on its marks grid and register, and locking waits for a mark from each of them.`}
+                description={`All ${roster.length} students in ${classLabel} go back on its marks grid and register, and locking waits for a mark from each of them. The list of who takes it is cleared.`}
                 confirmLabel="Whole class"
                 onConfirm={() => setElective(false)}
               />
