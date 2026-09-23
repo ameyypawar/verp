@@ -6,6 +6,7 @@ import {
   studentsWithMarks,
 } from "./electives"
 import { incompleteStudents, type Component } from "./marks-integrity"
+import type { MarksInput } from "./sgpi"
 
 const ELECTIVE = { isElective: true }
 const WHOLE_CLASS = { isElective: false }
@@ -89,7 +90,7 @@ describe("hasRecordedMark", () => {
 describe("studentsWithMarks", () => {
   // The whole-class grid saves a row for every student it shows, marked or not.
   it("ignores the empty rows a whole-class grid leaves behind", () => {
-    const marks = new Map([
+    const marks = new Map<string, MarksInput>([
       ["a", full],
       ["b", blank],
       ["c", { ...blank, isa: 0 }],
