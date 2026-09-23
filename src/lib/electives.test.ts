@@ -129,9 +129,20 @@ describe("rosterFrozenReason", () => {
 
   // Reopening the locks does not unpublish: what students can see was checked
   // against the roster as it stood.
-  it("stays frozen while the results are published, locks or no locks", () => {
-    expect(rosterFrozenReason({ ...open, published: true })).toMatch(
-      /^Its results are published/
+  it("stays frozen while the results are published, even with the locks reopened", () => {
+    expect(rosterFrozenReason({ ...open, published: true })).toBe(
+      "Its results are published. Withdraw them on the Marks tab before changing who takes it."
+    )
+  })
+
+  // Publishing needs every component locked, so both usually hold at once.
+  it("names the locks to reopen along with the results to withdraw", () => {
+    const reason = rosterFrozenReason({
+      published: true,
+      locked: ["isa", "mse", "ese"],
+    })
+    expect(reason).toBe(
+      "Its results are published. Withdraw them and reopen ISA, MSE, ESE on the Marks tab before changing who takes it."
     )
   })
 })

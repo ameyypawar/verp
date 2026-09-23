@@ -75,11 +75,14 @@ export function rosterFrozenReason(subject: {
   published: boolean
   locked: Component[]
 }): string | null {
+  const names = subject.locked.map((c) => LABEL[c]).join(", ")
   if (subject.published) {
-    return "Its results are published. Withdraw them on the Marks tab before changing who takes it."
+    // Publishing needs every component locked, so the locks are usually still
+    // on too. Naming them here saves a second refusal after the withdrawal.
+    const reopen = names ? ` and reopen ${names}` : ""
+    return `Its results are published. Withdraw them${reopen} on the Marks tab before changing who takes it.`
   }
   if (subject.locked.length === 0) return null
-  const names = subject.locked.map((c) => LABEL[c]).join(", ")
   const one = subject.locked.length === 1
   return `${names} ${one ? "is" : "are"} locked for this subject. Reopen ${one ? "it" : "them"} on the Marks tab before changing who takes it.`
 }
