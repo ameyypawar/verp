@@ -16,8 +16,10 @@ import {
   getAttendanceForSession,
   hasUntaggedAttendance,
 } from "@/db/queries/attendance"
+import { getElectiveMemberIds } from "@/db/queries/electives"
 import { canWriteOffering } from "@/lib/allocation"
 import { WHOLE_CLASS } from "@/lib/attendance"
+import { offeringRoster } from "@/lib/electives"
 import { AttendanceClient } from "./client"
 
 type Status = "present" | "absent" | "late" | "excused"
@@ -119,9 +121,20 @@ export default async function AttendancePage({
       ? `/dashboard/class/${classId}/batches?offering=${selected.id}`
       : null
 
+  // An elective's register is the students taking it, not the division: the
+  // rest of the class is in another lecture, and marking them absent would
+  // count against a subject they never chose.
+  const subjectRoster = selected?.isElective
+    ? offeringRoster(
+        selected,
+        classRoster,
+        await getElectiveMemberIds(selected.id)
+      )
+    : classRoster
+
   const rosterQuery: Promise<RosterRow[]> = batchId
     ? getStudentsInBatch(batchId)
-    : Promise.resolve(needsBatch ? [] : classRoster)
+    : Promise.resolve(needsBatch ? [] : subjectRoster)
   const marksQuery: Promise<MarkRow[]> = needsBatch
     ? Promise.resolve([])
     : getAttendanceForSession(classId, date, slot, offeringId, batchId)
