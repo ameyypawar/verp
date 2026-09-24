@@ -148,10 +148,15 @@ describe("rosterFrozenReason", () => {
 })
 
 describe("emptyRosterMessage", () => {
-  it("sends an empty elective to the Electives tab", () => {
-    const lock = emptyRosterMessage(true, "Lock")
-    expect(lock).toMatch(/^Nobody is taking this elective yet/)
-    expect(emptyRosterMessage(true, "Publish")).toMatch(/then publish\.$/)
+  // Who decides, not what to do next: the teacher who presses Lock cannot open
+  // the Electives tab.
+  it("names who puts students on an empty elective", () => {
+    expect(emptyRosterMessage(true, "Lock")).toBe(
+      "Nobody is taking this elective, so there is nothing to lock. The class coordinator adds its students on the Electives tab."
+    )
+    expect(emptyRosterMessage(true, "Publish")).toMatch(
+      /^Nobody is taking this elective, so there is nothing to publish\./
+    )
   })
 
   it("says plainly that an empty class has nothing to lock", () => {

@@ -18,6 +18,7 @@ import {
 } from "@/db/queries/attendance"
 import { getElectiveMemberIds } from "@/db/queries/electives"
 import { canWriteOffering } from "@/lib/allocation"
+import { offeringRoster } from "@/lib/electives"
 import { WHOLE_CLASS } from "@/lib/attendance"
 import { AttendanceClient } from "./client"
 
@@ -101,9 +102,16 @@ export default async function AttendancePage({
   // rest of the class is in another lecture, and marking them absent would
   // count against a subject they never chose. That holds inside a lab batch
   // too — a lab split into batches before it became an elective keeps its old
-  // assignments, and the save refuses anybody not taking it.
+  // assignments. Narrowed by the class as well as the enrolments, as the save
+  // is, so a batch member who has since left the class is not offered either.
   const takers = selected?.isElective
-    ? await getElectiveMemberIds(selected.id)
+    ? new Set(
+        offeringRoster(
+          selected,
+          classRoster,
+          await getElectiveMemberIds(selected.id)
+        ).map((s) => s.id)
+      )
     : null
   const onSubject = <T extends { id: string }>(rows: T[]) =>
     takers ? rows.filter((s) => takers.has(s.id)) : rows

@@ -215,9 +215,9 @@ A missing capability throws inside `authorize()` and is caught, so it surfaces a
 | `createBatchAction`           | `marks:write`        | `classInScope`, then `canWriteOffering`                                         |
 | `assignBatchAction`           | `marks:write`        | batch → offering, `classInScope`, `canWriteOffering`, `studentsInClass`         |
 | `removeFromBatchAction`       | `marks:write`        | batch → offering, `classInScope`, `canWriteOffering`                            |
-| `setElectiveAction`           | `offering:update`    | `classInScope`, then `canAllocate`; refused while a component is locked         |
-| `enrollElectiveAction`        | `offering:update`    | `classInScope`, then `canAllocate` → `studentsInClass`; refused while locked    |
-| `removeFromElectiveAction`    | `offering:update`    | `classInScope`, then `canAllocate`; refused while locked, or if they have marks |
+| `setElectiveAction`           | `offering:update`    | `classInScope`, then `canAllocate`; refused while locked or published           |
+| `enrollElectiveAction`        | `offering:update`    | as `setElectiveAction`, then `studentsInClass`                                  |
+| `removeFromElectiveAction`    | `offering:update`    | as `enrollElectiveAction`; also refused if they have marks                      |
 
 Three of these are worth reading twice:
 
@@ -228,6 +228,8 @@ Three of these are worth reading twice:
 - **Locking now requires completeness.** A component cannot be locked until
   every active student on the roster has it, and publishing re-checks the whole
   set. Before that, a register of 89 blank rows could be locked and published.
+  An empty roster does not count as complete: with nobody on it, there is
+  nothing to lock or publish.
 - **Marks are validated at this boundary**, against the course's own maxima, and
   a payload with any bad value is rejected whole.
 

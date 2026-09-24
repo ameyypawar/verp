@@ -94,6 +94,10 @@ export function rosterFrozenReason(subject: {
  * having marked anything. That let an elective nobody had been put on yet be
  * locked and published — a result for nobody, behind a lock that then froze its
  * roster empty.
+ *
+ * It says who decides the roster rather than what to do next. The teacher who
+ * presses Lock cannot open the Electives tab, and a coordinator who meets this
+ * while publishing has locks to reopen first, which that tab tells them.
  */
 export function emptyRosterMessage(
   isElective: boolean,
@@ -101,6 +105,6 @@ export function emptyRosterMessage(
 ): string {
   const verb = action.toLowerCase()
   return isElective
-    ? `Nobody is taking this elective yet. Put its students on it on the Electives tab, then ${verb}.`
+    ? `Nobody is taking this elective, so there is nothing to ${verb}. The class coordinator adds its students on the Electives tab.`
     : `This class has no students yet, so there is nothing to ${verb}.`
 }
