@@ -250,12 +250,17 @@ export function flagRow(input: RosterFields): PreviewRow {
   return row
 }
 
-/** The department a roll number states, or null when it states none. */
-export function rollDepartment(rollNumber: string): string | null {
+/**
+ * Whether a roll number parses but names no department: its branch is one the
+ * roll map does not know. Only such a row needs a department set by hand. A
+ * roll that will not parse is fixed first, and its department then follows
+ * from it.
+ */
+export function rollNeedsDepartment(rollNumber: string): boolean {
   try {
-    return parseRollNumber(rollNumber).department
+    return parseRollNumber(rollNumber).department === null
   } catch {
-    return null
+    return false
   }
 }
 

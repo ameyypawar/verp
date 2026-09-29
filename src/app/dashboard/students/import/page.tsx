@@ -14,9 +14,11 @@ export default async function ImportStudentsPage() {
   if (!user || !can(user, "student:update")) redirect("/dashboard")
 
   // A department only needs setting on a roll whose branch the roll map does
-  // not know, and only a super-admin can import one: rollsInScope judges every
-  // other tier by the branch inside the roll, so a department set on such a row
-  // would read as all clear here and still be refused at import.
+  // not know, and only a super-admin can import one. rollsInScope refuses it
+  // for everyone else: an HOD is judged by the branch inside the roll, and a
+  // teacher by the classes they hold, which are only ever created for branches
+  // the map knows. Offered to them, the menu would read as all clear here and
+  // still be refused at import.
   const departments =
     user.tier === "super_admin"
       ? (await listDepartments())

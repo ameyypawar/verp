@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   editRows,
   flagRow,
-  rollDepartment,
+  rollNeedsDepartment,
   type RosterFields,
 } from "./xlsx-import"
 
@@ -92,14 +92,20 @@ describe("editRows", () => {
   })
 })
 
-describe("rollDepartment", () => {
-  it("reads the department a known branch encodes", () => {
-    expect(rollDepartment("23108A0054")).toBe("EXCS")
+describe("rollNeedsDepartment", () => {
+  it("is false for a roll whose branch names its department", () => {
+    expect(rollNeedsDepartment("23108A0054")).toBe(false)
   })
 
-  // The rows a department set on a selection lands on.
-  it("is null for a branch the roll map does not know, or no roll at all", () => {
-    expect(rollDepartment("23201A0001")).toBeNull()
-    expect(rollDepartment("CLASS")).toBeNull()
+  // The only rows a department set on a selection lands on.
+  it("is true for a branch the roll map does not know", () => {
+    expect(rollNeedsDepartment("23201A0001")).toBe(true)
+  })
+
+  // Fixed first, after which the department follows from the roll. A known
+  // branch with a division it does not run still names its department.
+  it("is false for a roll that will not parse", () => {
+    expect(rollNeedsDepartment("CLASS")).toBe(false)
+    expect(rollNeedsDepartment("23108C0001")).toBe(false)
   })
 })

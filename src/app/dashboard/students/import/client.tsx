@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils"
 import {
   editRows,
   flagRow,
-  rollDepartment,
+  rollNeedsDepartment,
   type PreviewRow,
   type RosterFields,
 } from "@/lib/xlsx-import"
@@ -204,9 +204,21 @@ export function ImportClient({
 
   // A roll that names its department keeps it: any other value would only be
   // flagged against the roll. So a department set on a selection lands on the
-  // rows whose roll cannot place them.
+  // rows whose roll parses but cannot place them, and says so when it skips
+  // any rather than looking as if it did nothing.
   function setDepartmentOnSelected(code: string) {
-    setOnSelected({ department: code }, (r) => !rollDepartment(r.rollNumber))
+    const picked = rows?.filter((r) => selected.has(r.id)) ?? []
+    const placeless = picked.filter((r) => rollNeedsDepartment(r.rollNumber))
+    setOnSelected({ department: code }, (r) =>
+      rollNeedsDepartment(r.rollNumber)
+    )
+    if (placeless.length < picked.length) {
+      toast.info(
+        placeless.length === 0
+          ? "Nothing changed: every selected row gets its department from its roll number, or needs its roll number fixed first."
+          : `Set on ${placeless.length} of ${picked.length}. The rest get their department from their roll number, or need it fixed first.`
+      )
+    }
   }
 
   function removeSelected() {
@@ -418,11 +430,11 @@ export function ImportClient({
                 Select them
               </Button>
             </>
-          ) : (
+          ) : rows.length > 0 ? (
             <span className="flex items-center gap-1 text-green-600">
               <CheckCircle2Icon className="size-3.5" /> all clear
             </span>
-          )}
+          ) : null}
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={reset}>
@@ -544,6 +556,17 @@ export function ImportClient({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {rows.length === 0 && (
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  colSpan={COLUMNS.length + 3}
+                  className="text-muted-foreground py-8 text-center text-sm"
+                >
+                  Every row has been removed. Cancel, then choose the file again
+                  to start over.
+                </TableCell>
+              </TableRow>
+            )}
             {rows.map((row, i) => {
               const flagFor = (key: string) =>
                 row.flags.find((f) => f.field === key)
