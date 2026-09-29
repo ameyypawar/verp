@@ -445,7 +445,7 @@ export function ImportClient({
                 Set year
                 <ChevronDownIcon data-icon="inline-end" />
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-auto">
                 {YEARS.map((y) => (
                   <DropdownMenuItem
                     key={y.value}
@@ -464,7 +464,7 @@ export function ImportClient({
                   Set department
                   <ChevronDownIcon data-icon="inline-end" />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
+                <DropdownMenuContent align="end" className="w-auto">
                   {departments.map((d) => (
                     <DropdownMenuItem
                       key={d.code}
