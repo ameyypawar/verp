@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils"
 import {
   editRows,
   flagRow,
+  rollDepartment,
   type PreviewRow,
   type RosterFields,
 } from "@/lib/xlsx-import"
@@ -188,12 +189,24 @@ export function ImportClient({
     })
   }
 
-  // The HOD's case: a sheet of sixty students all missing a year, or all from a
-  // branch the roll map does not know, used to be sixty cells typed one by one.
-  // A value set on a selection goes through editRows, which re-validates each
-  // row exactly as typing into its cell would.
-  function setOnSelected(patch: Partial<RosterFields>) {
-    setRows((prev) => prev && editRows(prev, (r) => selected.has(r.id), patch))
+  // The HOD's case: a sheet of sixty students all missing a year used to be
+  // sixty cells typed one by one. A value set on a selection goes through
+  // editRows, which re-validates each row exactly as typing into its cell would.
+  function setOnSelected(
+    patch: Partial<RosterFields>,
+    applies: (row: Row) => boolean = () => true
+  ) {
+    setRows(
+      (prev) =>
+        prev && editRows(prev, (r) => selected.has(r.id) && applies(r), patch)
+    )
+  }
+
+  // A roll that names its department keeps it: any other value would only be
+  // flagged against the roll. So a department set on a selection lands on the
+  // rows whose roll cannot place them.
+  function setDepartmentOnSelected(code: string) {
+    setOnSelected({ department: code }, (r) => !rollDepartment(r.rollNumber))
   }
 
   function removeSelected() {
@@ -202,12 +215,15 @@ export function ImportClient({
   }
 
   async function commit() {
-    if (!rows) return
+    if (!rows || rows.length === 0) return
     if (flaggedCount > 0) {
       toast.error(`Resolve ${flaggedCount} flagged row(s) before importing.`)
       return
     }
     setCommitting(true)
+    // Kept so the server's row numbers can be traced back by id: they count
+    // places in what was sent, and the preview can change while it is in flight.
+    const sent = rows
     try {
       const res = await fetch("/api/students/import", {
         method: "POST",
@@ -216,7 +232,7 @@ export function ImportClient({
           file: file.current
             ? { name: file.current.name, size: file.current.size }
             : undefined,
-          rows: rows.map((r) => ({
+          rows: sent.map((r) => ({
             rollNumber: r.rollNumber,
             firstName: r.firstName,
             lastName: r.lastName || undefined,
@@ -241,19 +257,18 @@ export function ImportClient({
         toast.warning(`Imported ${inserted}, ${failed} failed.`)
         // Surface DB-level failures (e.g. an already-existing roll number) back
         // onto the rows so the TR can see which.
-        setRows((prev) => {
-          if (!prev) return prev
-          const next = [...prev]
-          for (const e of errors) {
-            const i = e.row - 1
-            if (next[i])
-              next[i] = {
-                ...next[i],
-                flags: [{ field: "rollNumber", message: e.message }],
-              }
-          }
-          return next
-        })
+        const failures = new Map(
+          errors.map((e) => [sent[e.row - 1]?.id, e.message])
+        )
+        setRows(
+          (prev) =>
+            prev?.map((r) => {
+              const message = failures.get(r.id)
+              return message === undefined
+                ? r
+                : { ...r, flags: [{ field: "rollNumber", message }] }
+            }) ?? prev
+        )
       } else {
         toast.success(`Imported ${inserted} students.`)
         router.push("/dashboard/students")
@@ -415,7 +430,7 @@ export function ImportClient({
           </Button>
           <Button
             size="sm"
-            disabled={committing || flaggedCount > 0}
+            disabled={committing || flaggedCount > 0 || rows.length === 0}
             onClick={commit}
           >
             {committing ? "Importing…" : `Import ${rows.length} students`}
@@ -468,7 +483,7 @@ export function ImportClient({
                   {departments.map((d) => (
                     <DropdownMenuItem
                       key={d.code}
-                      onClick={() => setOnSelected({ department: d.code })}
+                      onClick={() => setDepartmentOnSelected(d.code)}
                     >
                       {d.code} — {d.name}
                     </DropdownMenuItem>

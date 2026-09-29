@@ -250,6 +250,15 @@ export function flagRow(input: RosterFields): PreviewRow {
   return row
 }
 
+/** The department a roll number states, or null when it states none. */
+export function rollDepartment(rollNumber: string): string | null {
+  try {
+    return parseRollNumber(rollNumber).department
+  } catch {
+    return null
+  }
+}
+
 /**
  * Apply one edit to every row `pick` chooses, and re-validate each of them.
  *

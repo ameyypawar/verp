@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { editRows, flagRow, type RosterFields } from "./xlsx-import"
+import {
+  editRows,
+  flagRow,
+  rollDepartment,
+  type RosterFields,
+} from "./xlsx-import"
 
 const blank: RosterFields = {
   rollNumber: "",
@@ -35,6 +40,22 @@ describe("editRows", () => {
     expect(next[2].flags.map((f) => f.field)).toEqual(["year"])
   })
 
+  // The claim the bulk bar rests on: a value set on a selection gives the row
+  // that typing it into the cell would.
+  it("gives the same row as typing the value into its cell", () => {
+    const row = student("23108A0001")
+    const { flags: _drop, ...fields } = row
+    const [bulk] = editRows([row], () => true, { year: "TE" })
+    expect(bulk).toEqual(flagRow({ ...fields, year: "TE" }))
+  })
+
+  it("changes nothing when it picks nothing", () => {
+    const rows = [student("23108A0001"), student("23108A0002")]
+    const next = editRows(rows, () => false, { year: "TE" })
+    expect(next).toEqual(rows)
+    expect(next[0]).toBe(rows[0])
+  })
+
   it("returns the rows it did not pick as they were", () => {
     const rows = [student("23108A0001"), student("23108A0002")]
     const next = editRows(rows, (r) => r.rollNumber === "23108A0001", {
@@ -68,5 +89,17 @@ describe("editRows", () => {
     expect(next.id).toBe(7)
     expect(next.firstName).toBe("Asha")
     expect(next.flags).toEqual([])
+  })
+})
+
+describe("rollDepartment", () => {
+  it("reads the department a known branch encodes", () => {
+    expect(rollDepartment("23108A0054")).toBe("EXCS")
+  })
+
+  // The rows a department set on a selection lands on.
+  it("is null for a branch the roll map does not know, or no roll at all", () => {
+    expect(rollDepartment("23201A0001")).toBeNull()
+    expect(rollDepartment("CLASS")).toBeNull()
   })
 })

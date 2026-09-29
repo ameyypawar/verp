@@ -13,17 +13,16 @@ export default async function ImportStudentsPage() {
   const user = await getSessionUser()
   if (!user || !can(user, "student:update")) redirect("/dashboard")
 
-  // Offered for rows whose roll number names no department: the roll map covers
-  // only the CS-family branches, so for any other the importer has to say.
-  // Scoped the way the syllabus and faculty importers scope theirs.
-  const all = await listDepartments()
-  const scope =
+  // A department only needs setting on a roll whose branch the roll map does
+  // not know, and only a super-admin can import one: rollsInScope judges every
+  // other tier by the branch inside the roll, so a department set on such a row
+  // would read as all clear here and still be refused at import.
+  const departments =
     user.tier === "super_admin"
-      ? all.filter((d) => d.isActive).map((d) => d.code)
-      : user.deptCodes
-  const departments = all
-    .filter((d) => scope.includes(d.code))
-    .map((d) => ({ code: d.code, name: d.name }))
+      ? (await listDepartments())
+          .filter((d) => d.isActive)
+          .map((d) => ({ code: d.code, name: d.name }))
+      : []
 
   return (
     <>
