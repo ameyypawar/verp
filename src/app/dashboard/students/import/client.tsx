@@ -9,9 +9,19 @@ import {
   CheckCircle2Icon,
   XIcon,
   AlertTriangleIcon,
+  ChevronDownIcon,
+  Trash2Icon,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
+import { ConfirmAction } from "@/components/confirm-action"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -29,7 +39,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import { flagRow, type PreviewRow } from "@/lib/xlsx-import"
+import {
+  editRows,
+  flagRow,
+  type PreviewRow,
+  type RosterFields,
+} from "@/lib/xlsx-import"
 
 // Only the fields VERP does NOT compute. No marks, no CGPA, no attendance.
 const COLUMNS: { key: keyof PreviewRow; label: string }[] = [
@@ -42,6 +57,20 @@ const COLUMNS: { key: keyof PreviewRow; label: string }[] = [
   { key: "year", label: "Year" },
 ]
 
+// The four years, named as the syllabus importer names them, for setting on
+// many rows at once.
+const YEARS = [
+  { value: "FE", label: "FE — First Year" },
+  { value: "SE", label: "SE — Second Year" },
+  { value: "TE", label: "TE — Third Year" },
+  { value: "BE", label: "BE — Final Year" },
+]
+
+// A preview row with an id, so a selection survives edits and removals. The
+// sheet gives a row no id of its own, and its index shifts whenever a row above
+// it is removed.
+type Row = PreviewRow & { id: number }
+
 type PreviewResponse = {
   sheetNames: string[]
   activeSheet: string
@@ -53,14 +82,20 @@ type PreviewResponse = {
   truncated: boolean
 }
 
-export function ImportClient() {
+export function ImportClient({
+  departments,
+}: {
+  /** Departments this person may set on rows whose roll number names none. */
+  departments: { code: string; name: string }[]
+}) {
   const router = useRouter()
   const fileInput = useRef<HTMLInputElement>(null)
   const file = useRef<File | null>(null)
 
   const [fileName, setFileName] = useState<string | null>(null)
   const [preview, setPreview] = useState<PreviewResponse | null>(null)
-  const [rows, setRows] = useState<PreviewRow[] | null>(null)
+  const [rows, setRows] = useState<Row[] | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(false)
   const [committing, setCommitting] = useState(false)
 
@@ -88,7 +123,10 @@ export function ImportClient() {
       }
       const data = json.data as PreviewResponse
       setPreview(data)
-      setRows(data.headerFound ? data.rows : null)
+      setRows(
+        data.headerFound ? data.rows.map((r, id) => ({ ...r, id })) : null
+      )
+      setSelected(new Set())
       if (data.truncated) {
         toast.warning(`Only the first ${data.rows.length} rows were read.`)
       }
@@ -116,6 +154,7 @@ export function ImportClient() {
     setFileName(null)
     setPreview(null)
     setRows(null)
+    setSelected(new Set())
   }
 
   // Live re-validation: as the TR fixes a cell, re-run the same flagRow the
@@ -125,15 +164,41 @@ export function ImportClient() {
       if (!prev) return prev
       const next = [...prev]
       const { flags: _drop, ...fields } = next[index]
-      next[index] = flagRow({ ...fields, [key]: value })
+      next[index] = {
+        ...flagRow({ ...fields, [key]: value }),
+        id: next[index].id,
+      }
       return next
     })
   }
 
   // Real sheets carry section labels the auto-classifier can't confidently drop
   // ("CLASS", "DSY"). The TR removes those rows here rather than being blocked.
-  function removeRow(index: number) {
-    setRows((prev) => prev?.filter((_, i) => i !== index) ?? prev)
+  function removeRow(id: number) {
+    setRows((prev) => prev?.filter((r) => r.id !== id) ?? prev)
+    select(id, false)
+  }
+
+  function select(id: number, on: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (on) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // The HOD's case: a sheet of sixty students all missing a year, or all from a
+  // branch the roll map does not know, used to be sixty cells typed one by one.
+  // A value set on a selection goes through editRows, which re-validates each
+  // row exactly as typing into its cell would.
+  function setOnSelected(patch: Partial<RosterFields>) {
+    setRows((prev) => prev && editRows(prev, (r) => selected.has(r.id), patch))
+  }
+
+  function removeSelected() {
+    setRows((prev) => prev?.filter((r) => !selected.has(r.id)) ?? prev)
+    setSelected(new Set())
   }
 
   async function commit() {
@@ -307,6 +372,12 @@ export function ImportClient() {
     )
   }
 
+  const allSelected = rows.length > 0 && selected.size === rows.length
+  const selectFlagged = () =>
+    setSelected(
+      new Set(rows.filter((r) => r.flags.length > 0).map((r) => r.id))
+    )
+
   // ── Preview + edit state ──────────────────────────────────────────────
   return (
     <div className="flex flex-col gap-4">
@@ -321,7 +392,17 @@ export function ImportClient() {
             {rows.length} row{rows.length === 1 ? "" : "s"}
           </span>
           {flaggedCount > 0 ? (
-            <span className="text-destructive">· {flaggedCount} to fix</span>
+            <>
+              <span className="text-destructive">· {flaggedCount} to fix</span>
+              <Button
+                variant="link"
+                size="xs"
+                className="h-auto px-0"
+                onClick={selectFlagged}
+              >
+                Select them
+              </Button>
+            </>
           ) : (
             <span className="flex items-center gap-1 text-green-600">
               <CheckCircle2Icon className="size-3.5" /> all clear
@@ -345,14 +426,99 @@ export function ImportClient() {
       <p className="text-muted-foreground text-xs leading-relaxed">
         Red cells disagree with the roll number (which encodes branch and
         division) or are missing. Edit any cell to fix it — the flag clears when
-        it is resolved. Remove any row that is not a student (a section label
-        left in the sheet) with the ✕ on its right.
+        it is resolved. Tick rows to set their year
+        {departments.length > 0 && " or department"} in one go, or to remove
+        them together; the ✕ on a row removes just that one, such as a section
+        label left in the sheet.
       </p>
+
+      {selected.size > 0 && (
+        <div className="border-blue/30 bg-blue/5 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2">
+          <span className="text-sm font-medium tabular-nums">
+            {selected.size} selected
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                Set year
+                <ChevronDownIcon data-icon="inline-end" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {YEARS.map((y) => (
+                  <DropdownMenuItem
+                    key={y.value}
+                    onClick={() => setOnSelected({ year: y.value })}
+                  >
+                    {y.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {departments.length > 0 && (
+              <DropdownMenu modal={false}>
+                <DropdownMenuTrigger
+                  className={buttonVariants({ variant: "outline", size: "sm" })}
+                >
+                  Set department
+                  <ChevronDownIcon data-icon="inline-end" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {departments.map((d) => (
+                    <DropdownMenuItem
+                      key={d.code}
+                      onClick={() => setOnSelected({ department: d.code })}
+                    >
+                      {d.code} — {d.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <ConfirmAction
+              trigger={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-destructive"
+                >
+                  <Trash2Icon className="mr-1.5 size-3.5" />
+                  Remove {selected.size}
+                </Button>
+              }
+              title={`Remove ${selected.size} ${selected.size === 1 ? "row" : "rows"} from this import?`}
+              description="They are left out when you import. To get them back, choose the file again."
+              confirmLabel="Remove"
+              onConfirm={removeSelected}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelected(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="border-border max-h-[65vh] overflow-auto rounded-lg border">
         <Table>
           <TableHeader className="bg-muted/60 sticky top-0">
             <TableRow className="hover:bg-transparent">
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={selected.size > 0 && !allSelected}
+                  onCheckedChange={(v) =>
+                    setSelected(
+                      v ? new Set(rows.map((r) => r.id)) : new Set<number>()
+                    )
+                  }
+                  aria-label="Select all"
+                />
+              </TableHead>
               <TableHead className="w-10 text-xs">#</TableHead>
               {COLUMNS.map((c) => (
                 <TableHead key={c.key} className="text-xs">
@@ -367,7 +533,18 @@ export function ImportClient() {
               const flagFor = (key: string) =>
                 row.flags.find((f) => f.field === key)
               return (
-                <TableRow key={i} className="hover:bg-muted/30">
+                <TableRow
+                  key={row.id}
+                  data-state={selected.has(row.id) ? "selected" : undefined}
+                  className="hover:bg-muted/30"
+                >
+                  <TableCell>
+                    <Checkbox
+                      checked={selected.has(row.id)}
+                      onCheckedChange={(v) => select(row.id, !!v)}
+                      aria-label={`Select row ${i + 1}`}
+                    />
+                  </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
                     {i + 1}
                   </TableCell>
@@ -400,7 +577,7 @@ export function ImportClient() {
                       className="text-muted-foreground hover:text-destructive size-7"
                       title="Remove this row"
                       aria-label={`Remove row ${i + 1}`}
-                      onClick={() => removeRow(i)}
+                      onClick={() => removeRow(row.id)}
                     >
                       <XIcon className="size-3.5" />
                     </Button>
