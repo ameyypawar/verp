@@ -100,10 +100,10 @@ export default async function AttendancePage({
     : undefined
   // An elective's register is the students taking it, not the division: the
   // rest of the class is in another lecture, and marking them absent would
-  // count against a subject they never chose. That holds inside a lab batch
-  // too — a lab split into batches before it became an elective keeps its old
-  // assignments. Narrowed by the class as well as the enrolments, as the save
-  // is, so a batch member who has since left the class is not offered either.
+  // count against a subject they never chose. Its lab batches hold only them,
+  // but a batch register is narrowed too, by the class as well as the
+  // enrolments, as the save is, so a batch member who has since left the class
+  // is not offered either.
   const takers = selected?.isElective
     ? new Set(
         offeringRoster(

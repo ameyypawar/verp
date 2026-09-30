@@ -16,7 +16,14 @@ import {
 } from "../../actions"
 
 type Person = { id: string; rollNumber: string; name: string }
-type Offering = { id: string; code: string; name: string; isElective: boolean }
+type Offering = {
+  id: string
+  code: string
+  name: string
+  isElective: boolean
+  /** A lab, which can be split into batches. */
+  lab: boolean
+}
 
 export function ElectivesClient({
   classId,
@@ -26,6 +33,7 @@ export function ElectivesClient({
   roster,
   members,
   withMarks,
+  batched,
   frozen,
 }: {
   classId: string
@@ -37,6 +45,8 @@ export function ElectivesClient({
   members: string[]
   /** Who already has a mark recorded in the selected subject. */
   withMarks: string[]
+  /** Who holds a place in the selected subject's lab batches. */
+  batched: string[]
   /** Why the selected subject's roster cannot change right now, or null. */
   frozen: string | null
 }) {
@@ -62,6 +72,15 @@ export function ElectivesClient({
   const onIt = roster.filter((s) => taking.has(s.id))
   const offIt = roster.filter((s) => !taking.has(s.id))
   const locked = frozen !== null
+  const inBatch = new Set(batched)
+  // Becoming an elective takes everybody not put on it out of its lab batches.
+  const leaving = batched.filter((id) => !marked.has(id)).length
+  const batchNote =
+    leaving === 0
+      ? null
+      : leaving === 1
+        ? "Its lab batches keep only them, so 1 student leaves their batch for now and gets it back when put on it."
+        : `Its lab batches keep only them, so ${leaving} students leave their batches for now and get them back when put on it.`
 
   // Resolves once the action settles, so a confirm dialog stays open and busy
   // until the change has actually landed.
@@ -148,7 +167,7 @@ export function ElectivesClient({
                 destructive={false}
                 disabled={pending || locked}
                 title={`Teach ${selected.code} to the whole class?`}
-                description={`All ${roster.length} students in ${classLabel} go back on its marks grid and register, and locking waits for a mark from each of them. The list of who takes it is cleared.`}
+                description={`All ${roster.length} students in ${classLabel} go back on its marks grid and register, and locking waits for a mark from each of them. The list of who takes it is cleared.${selected.lab ? " Anyone taken out of its lab batches gets their place back." : ""}`}
                 confirmLabel="Whole class"
                 onConfirm={() => setElective(false)}
               />
@@ -159,11 +178,14 @@ export function ElectivesClient({
                 destructive={false}
                 disabled={pending || locked}
                 title={`Make ${selected.code} an elective?`}
-                description={
-                  marked.size > 0
-                    ? `Its marks grid and register will list only the students you put on it. The ${marked.size} who already have marks in it are put on it now.`
-                    : "Its marks grid and register will list only the students you put on it."
-                }
+                description={[
+                  "Its marks grid and register will list only the students you put on it.",
+                  marked.size > 0 &&
+                    `The ${marked.size} who already have marks in it are put on it now.`,
+                  batchNote,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 confirmLabel="Make elective"
                 onConfirm={() => setElective(true)}
               />
@@ -276,7 +298,11 @@ export function ElectivesClient({
                           </Button>
                         }
                         title={`Take ${s.name} off ${selected.code}?`}
-                        description={`${s.rollNumber} leaves its marks grid and register, and can be put back at any time.`}
+                        description={
+                          inBatch.has(s.id)
+                            ? `${s.rollNumber} leaves its marks grid, register and lab batch, and can be put back at any time, into the same batch.`
+                            : `${s.rollNumber} leaves its marks grid and register, and can be put back at any time.`
+                        }
                         confirmLabel="Remove"
                         onConfirm={() => remove(s.id)}
                       />

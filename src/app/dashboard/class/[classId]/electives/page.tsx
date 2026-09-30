@@ -5,6 +5,7 @@ import { rosterFrozenReason, studentsWithMarks } from "@/lib/electives"
 import { getStudentsByClassKeys } from "@/db/queries/students"
 import { listOfferingsForClass } from "@/db/queries/offerings"
 import { getElectiveMemberIds } from "@/db/queries/electives"
+import { getBatchedStudentIds } from "@/db/queries/batches"
 import { getLockedComponents, getMarksForOffering } from "@/db/queries/marks"
 import { ClassTabs } from "../class-tabs"
 import { classTabs, classTrail, requireClassContext } from "../class-context"
@@ -37,13 +38,16 @@ export default async function ElectivesPage({
     offerings.find((o) => o.isElective) ??
     offerings[0]
 
-  const [roster, members, marks, locks] = await Promise.all([
+  const [roster, members, marks, locks, batched] = await Promise.all([
     getStudentsByClassKeys([cls.classKey]),
     selected
       ? getElectiveMemberIds(selected.id)
       : Promise.resolve(new Set<string>()),
     selected ? getMarksForOffering(selected.id) : Promise.resolve([]),
     selected ? getLockedComponents(selected.id) : Promise.resolve([]),
+    selected
+      ? getBatchedStudentIds(selected.id)
+      : Promise.resolve(new Set<string>()),
   ])
 
   return (
@@ -65,6 +69,7 @@ export default async function ElectivesPage({
             code: o.course.courseCode,
             name: o.course.courseName,
             isElective: o.isElective,
+            lab: o.course.courseType !== "theory",
           }))}
           selectedId={selected?.id ?? null}
           roster={roster.map((s) => ({
@@ -73,6 +78,7 @@ export default async function ElectivesPage({
             name: `${s.firstName} ${s.lastName}`.trim(),
           }))}
           members={roster.filter((s) => members.has(s.id)).map((s) => s.id)}
+          batched={roster.filter((s) => batched.has(s.id)).map((s) => s.id)}
           withMarks={studentsWithMarks(
             new Map(marks.map((m) => [m.studentId, m]))
           )}

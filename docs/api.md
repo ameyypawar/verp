@@ -242,6 +242,10 @@ what "every student is marked" is measured against, so the teacher entering the
 marks is not the one who can shorten it. It cannot change while a component is
 locked or the results are published, a student with a mark in it cannot be
 taken off, and an elective with nobody on it cannot be locked or published.
+A lab's batches follow the list. A student who stops taking it, or is not on
+it when a lab already split into batches becomes an elective, leaves its
+batches, and taking it again gives back the place they had, so a batch only
+ever holds students taking the subject.
 
 ### Department workspace — `src/app/dashboard/dept/actions.ts`
 
