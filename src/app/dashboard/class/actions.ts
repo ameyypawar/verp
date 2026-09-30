@@ -51,15 +51,19 @@ import {
 import {
   createBatch,
   getBatchById,
+  getBatchedStudentIds,
   getStudentsInBatch,
   listBatchesForOffering,
   assignStudentsToBatch,
   removeStudentFromBatch,
+  restoreBatchPlaces,
+  retireBatchPlaces,
 } from "@/db/queries/batches"
 import {
   clearElective,
   deleteBlankMarks,
   enrollInElective,
+  getElectiveMemberIds,
   getOfferingRoster,
   removeFromElective,
 } from "@/db/queries/electives"
@@ -1006,6 +1010,10 @@ async function rosterFrozen(offering: {
  * Going back to the whole class ends the elective's list rather than parking
  * it. Made an elective again, the subject starts from whoever has marks then,
  * which is what the coordinator is told, not from a list nobody could see.
+ *
+ * A lab's batches follow the list, so its Batches tab never shows somebody its
+ * register leaves out. Becoming an elective takes everybody not on it out of
+ * its batches, and going back to the whole class gives them their places back.
  */
 export async function setElectiveAction(input: {
   offeringId: string
@@ -1038,9 +1046,21 @@ export async function setElectiveAction(input: {
         studentIds: marked,
       })
       const cleared = await deleteBlankMarks(input.offeringId)
-      details = { courseCode, enrolled: marked.length, cleared }
+      const taking = await getElectiveMemberIds(input.offeringId)
+      const batched = await getBatchedStudentIds(input.offeringId)
+      const unbatched = await retireBatchPlaces(
+        input.offeringId,
+        [...batched].filter((id) => !taking.has(id))
+      )
+      details = { courseCode, enrolled: marked.length, cleared, unbatched }
     } else {
-      details = { courseCode, released: await clearElective(input.offeringId) }
+      const released = await clearElective(input.offeringId)
+      const classRoster = await getStudentsByClassKeys([cls.classKey])
+      const rebatched = await restoreBatchPlaces(
+        input.offeringId,
+        classRoster.map((s) => s.id)
+      )
+      details = { courseCode, released, rebatched }
     }
     await setOfferingElective(input.offeringId, input.elective)
     await createAuditLog({
@@ -1052,6 +1072,7 @@ export async function setElectiveAction(input: {
     })
     revalidatePath(`/dashboard/class/${offering.classId}/electives`)
     revalidatePath(`/dashboard/class/${offering.classId}/marks`)
+    revalidatePath(`/dashboard/class/${offering.classId}/batches`)
     return { error: null }
   } catch (err) {
     return { error: getErrorMessage(err, "Could not change the subject") }
@@ -1095,6 +1116,8 @@ export async function enrollElectiveAction(input: {
     if (!scope.ok) return { error: scope.reason }
 
     await enrollInElective({ courseOfferingId: input.offeringId, studentIds })
+    // Back into the lab batch they were in before they came off it.
+    const rebatched = await restoreBatchPlaces(input.offeringId, studentIds)
     await createAuditLog({
       action: "elective.enrolled",
       actorId: user!.id,
@@ -1103,10 +1126,12 @@ export async function enrollElectiveAction(input: {
       details: {
         courseCode: offering.course.courseCode,
         count: studentIds.length,
+        rebatched,
       },
     })
     revalidatePath(`/dashboard/class/${offering.classId}/electives`)
     revalidatePath(`/dashboard/class/${offering.classId}/marks`)
+    revalidatePath(`/dashboard/class/${offering.classId}/batches`)
     return { error: null }
   } catch (err) {
     return { error: getErrorMessage(err, "Could not add the students") }
@@ -1161,15 +1186,20 @@ export async function removeFromElectiveAction(input: {
     })
     // An empty row would still list the subject on their own record.
     await deleteBlankMarks(input.offeringId, input.studentId)
+    // Out of its lab batches too, until they are put back on it.
+    const unbatched = await retireBatchPlaces(input.offeringId, [
+      input.studentId,
+    ])
     await createAuditLog({
       action: "elective.removed",
       actorId: user!.id,
       targetType: "offering",
       targetId: input.offeringId,
-      details: { courseCode: offering.course.courseCode },
+      details: { courseCode: offering.course.courseCode, unbatched },
     })
     revalidatePath(`/dashboard/class/${offering.classId}/electives`)
     revalidatePath(`/dashboard/class/${offering.classId}/marks`)
+    revalidatePath(`/dashboard/class/${offering.classId}/batches`)
     return { error: null }
   } catch (err) {
     return { error: getErrorMessage(err, "Could not remove the student") }

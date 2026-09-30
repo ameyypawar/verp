@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest"
 import {
+  batchPlacesToRestore,
   emptyRosterMessage,
   hasRecordedMark,
   offeringRoster,
   rosterFrozenReason,
   studentsWithMarks,
+  type BatchPlace,
 } from "./electives"
 import { incompleteStudents, type Component } from "./marks-integrity"
 import type { MarksInput } from "./sgpi"
@@ -163,5 +165,55 @@ describe("emptyRosterMessage", () => {
     expect(emptyRosterMessage(false, "Lock")).toBe(
       "This class has no students yet, so there is nothing to lock."
     )
+  })
+})
+
+describe("batchPlacesToRestore", () => {
+  const at = (minutes: number) => new Date(Date.UTC(2026, 8, 30, 9, minutes))
+  const place = (
+    id: string,
+    studentId: string,
+    minutes: number,
+    extra: Partial<BatchPlace> = {}
+  ): BatchPlace => ({
+    id,
+    studentId,
+    isActive: false,
+    batchActive: true,
+    updatedAt: at(minutes),
+    ...extra,
+  })
+
+  // A lab already split into batches is made an elective before anybody has a
+  // mark, so everybody leaves its batches. The students then put on it go back
+  // to the batch they were in, not to none.
+  it("gives a student back the last place they held", () => {
+    const places = [place("b1", "s", 0), place("b2", "s", 30)]
+    expect(batchPlacesToRestore(places)).toEqual(["b2"])
+  })
+
+  it("leaves a student already in a batch where they are", () => {
+    const places = [
+      place("b1", "s", 30),
+      place("b2", "s", 0, { isActive: true }),
+    ]
+    expect(batchPlacesToRestore(places)).toEqual([])
+  })
+
+  it("gives back nothing when their last batch no longer runs", () => {
+    const places = [
+      place("b1", "s", 0),
+      place("b2", "s", 30, { batchActive: false }),
+    ]
+    expect(batchPlacesToRestore(places)).toEqual([])
+  })
+
+  it("decides for each student on their own", () => {
+    const places = [
+      place("a1", "a", 10),
+      place("b1", "b", 20),
+      place("b2", "b", 0, { isActive: true }),
+    ]
+    expect(batchPlacesToRestore(places)).toEqual(["a1"])
   })
 })

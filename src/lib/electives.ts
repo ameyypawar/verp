@@ -108,3 +108,36 @@ export function emptyRosterMessage(
     ? `Nobody is taking this elective, so there is nothing to ${verb}. The class coordinator adds its students on the Electives tab.`
     : `This class has no students yet, so there is nothing to ${verb}.`
 }
+
+/** A student's place in one of a subject's lab batches, live or switched off. */
+export type BatchPlace = {
+  id: string
+  studentId: string
+  isActive: boolean
+  /** Whether the batch itself still runs. */
+  batchActive: boolean
+  updatedAt: Date
+}
+
+/**
+ * The batch places to give back to students who take a subject again.
+ *
+ * A lab's batches hold only the students taking it, so a student leaves them
+ * when they come off an elective, or are not on it when a lab already split
+ * into batches becomes one. The place is switched off rather than deleted: the
+ * split is the teacher's work, and the student may well be put back. Taking
+ * the subject again gives back the last place they held, if that batch still
+ * runs. Anybody already in one of its batches stays where they are.
+ */
+export function batchPlacesToRestore(places: readonly BatchPlace[]): string[] {
+  const placed = new Set(
+    places.filter((p) => p.isActive).map((p) => p.studentId)
+  )
+  const last = new Map<string, BatchPlace>()
+  for (const p of places) {
+    if (placed.has(p.studentId)) continue
+    const seen = last.get(p.studentId)
+    if (!seen || p.updatedAt > seen.updatedAt) last.set(p.studentId, p)
+  }
+  return [...last.values()].filter((p) => p.batchActive).map((p) => p.id)
+}
