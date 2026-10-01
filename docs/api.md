@@ -218,6 +218,7 @@ A missing capability throws inside `authorize()` and is caught, so it surfaces a
 | `setElectiveAction`           | `offering:update`    | `classInScope`, then `canAllocate`; refused while locked or published           |
 | `enrollElectiveAction`        | `offering:update`    | as `setElectiveAction`, then `studentsInClass`                                  |
 | `removeFromElectiveAction`    | `offering:update`    | as `enrollElectiveAction`; also refused if they have marks                      |
+| `readElectiveListAction`      | `offering:update`    | `classInScope`, then `canAllocate`; reads a sheet and changes nothing           |
 
 Three of these are worth reading twice:
 
@@ -245,7 +246,10 @@ taken off, and an elective with nobody on it cannot be locked or published.
 A lab's batches follow the list. A student who stops taking it, or is not on
 it when a lab already split into batches becomes an elective, leaves its
 batches, and taking it again gives back the place they had, so a batch only
-ever holds students taking the subject.
+ever holds students taking the subject. A list can also come from a sheet:
+`readElectiveListAction` reads the roll numbers in it without writing anything,
+and the students it finds are added through `enrollElectiveAction`, like a list
+picked by hand.
 
 ### Department workspace — `src/app/dashboard/dept/actions.ts`
 

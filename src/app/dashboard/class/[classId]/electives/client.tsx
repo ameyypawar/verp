@@ -1,16 +1,30 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { BookOpenIcon, CheckCircle2Icon, UsersIcon } from "lucide-react"
+import {
+  BookOpenIcon,
+  CheckCircle2Icon,
+  FileSpreadsheetIcon,
+  UploadIcon,
+  UsersIcon,
+} from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ConfirmAction } from "@/components/confirm-action"
 import { EmptyState } from "@/components/empty-state"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   enrollElectiveAction,
+  readElectiveListAction,
   removeFromElectiveAction,
   setElectiveAction,
 } from "../../actions"
@@ -23,6 +37,15 @@ type Offering = {
   isElective: boolean
   /** A lab, which can be split into batches. */
   lab: boolean
+}
+/** A sheet read for the selected elective, not yet added. */
+type ImportedList = {
+  fileName: string
+  sheetNames: string[]
+  activeSheet: string
+  add: Person[]
+  already: Person[]
+  notInClass: string[]
 }
 
 export function ElectivesClient({
@@ -53,6 +76,10 @@ export function ElectivesClient({
   const router = useRouter()
   const [pending, start] = useTransition()
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [list, setList] = useState<ImportedList | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+  // Kept so switching to another tab of the same workbook reads it again.
+  const listFile = useRef<File | null>(null)
 
   if (offerings.length === 0) {
     return (
@@ -125,6 +152,45 @@ export function ElectivesClient({
       () => removeFromElectiveAction({ offeringId: selected.id, studentId }),
       "Taken off the elective"
     )
+  }
+
+  // Reads only. Nothing changes until the coordinator adds the students the
+  // sheet names, through the same action as picking them by hand.
+  function readList(file: File, sheet?: string) {
+    if (!selected) return
+    // A server action takes 1 MB; a list of roll numbers is a few kilobytes.
+    if (file.size > 1_000_000) {
+      toast.error(
+        "That file is over 1 MB. Upload just the list of roll numbers."
+      )
+      return
+    }
+    listFile.current = file
+    const form = new FormData()
+    form.append("offeringId", selected.id)
+    form.append("file", file)
+    if (sheet) form.append("sheet", sheet)
+    start(async () => {
+      const res = await readElectiveListAction(form)
+      if (res.error || !res.list) {
+        toast.error(res.error ?? "Could not read that file")
+        return
+      }
+      setList({ fileName: file.name, ...res.list })
+    })
+  }
+
+  function addListed() {
+    if (!selected || !list || list.add.length === 0) return
+    const studentIds = list.add.map((s) => s.id)
+    void run(async () => {
+      const res = await enrollElectiveAction({
+        offeringId: selected.id,
+        studentIds,
+      })
+      if (!res.error) setList(null)
+      return res
+    }, `Added ${studentIds.length} to ${selected.code}`)
   }
 
   return (
@@ -205,13 +271,117 @@ export function ElectivesClient({
         />
       )}
 
+      {selected?.isElective && list && (
+        <div className="border-border flex flex-col gap-3 rounded border p-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <FileSpreadsheetIcon className="text-muted-foreground size-4" />
+            <span className="font-medium">{list.fileName}</span>
+            {list.sheetNames.length > 1 && (
+              <Select
+                value={list.activeSheet}
+                onValueChange={(sheet) => {
+                  if (sheet && listFile.current)
+                    readList(listFile.current, sheet)
+                }}
+                disabled={pending}
+              >
+                <SelectTrigger size="sm" className="w-56">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {list.sheetNames.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          {list.add.length + list.already.length + list.notInClass.length ===
+          0 ? (
+            <p className="text-muted-foreground text-sm">
+              No roll numbers on this sheet.
+            </p>
+          ) : (
+            <p className="text-sm">
+              {list.add.length} to add · {list.already.length} already taking it
+              {list.notInClass.length > 0 &&
+                ` · ${list.notInClass.length} not in this class`}
+            </p>
+          )}
+          {list.notInClass.length > 0 && (
+            <p className="text-destructive text-xs">
+              Not in this class, so left out: {list.notInClass.join(", ")}
+            </p>
+          )}
+          {list.add.length > 0 && (
+            <div className="border-border max-h-48 overflow-y-auto rounded border">
+              {list.add.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm"
+                >
+                  <span className="identifier">{s.rollNumber}</span>
+                  <span>{s.name}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={pending || locked || list.add.length === 0}
+              onClick={addListed}
+            >
+              Add {list.add.length} to {selected.code}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending}
+              onClick={() => setList(null)}
+            >
+              Cancel
+            </Button>
+            <span className="text-muted-foreground text-xs">
+              Nobody already on it is taken off.
+            </span>
+          </div>
+        </div>
+      )}
+
       {selected?.isElective && (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold">
-              Not taking it{" "}
-              <span className="text-muted-foreground">({offIt.length})</span>
-            </h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">
+                Not taking it{" "}
+                <span className="text-muted-foreground">({offIt.length})</span>
+              </h2>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending || locked}
+                onClick={() => fileInput.current?.click()}
+              >
+                <UploadIcon className="mr-1.5 size-3.5" />
+                Import list
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".xlsx,.csv"
+                aria-label={`List of students taking ${selected.code}`}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  // Cleared, so choosing the same file again still reads it.
+                  e.target.value = ""
+                  if (file) readList(file)
+                }}
+              />
+            </div>
             {offIt.length === 0 ? (
               <EmptyState
                 icon={CheckCircle2Icon}
@@ -268,7 +438,7 @@ export function ElectivesClient({
                 icon={UsersIcon}
                 variant="dashed"
                 title="Nobody yet"
-                description="Tick the students who chose this elective. Its marks grid and register list only them."
+                description="Tick the students who chose this elective, or import a list of their roll numbers. Its marks grid and register list only them."
               />
             ) : (
               <div className="border-border max-h-80 overflow-y-auto rounded border">
