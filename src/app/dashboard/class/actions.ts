@@ -20,9 +20,13 @@ import {
 import {
   emptyRosterMessage,
   hasRecordedMark,
+  matchElectiveList,
+  rollsInSheet,
   rosterFrozenReason,
+  sheetForSubject,
   studentsWithMarks,
 } from "@/lib/electives"
+import { readSheets } from "@/lib/read-sheets"
 import { canAllocate, canReopenLock, canWriteOffering } from "@/lib/allocation"
 import { getErrorMessage } from "@/lib/error-utils"
 import { parseRollNumber, expectedYear } from "@/lib/roll-number"
@@ -1135,6 +1139,93 @@ export async function enrollElectiveAction(input: {
     return { error: null }
   } catch (err) {
     return { error: getErrorMessage(err, "Could not add the students") }
+  }
+}
+
+/** A student as an imported elective list shows them. */
+type ListedStudent = { id: string; rollNumber: string; name: string }
+
+/**
+ * Read who takes an elective from an uploaded sheet, and change nothing.
+ *
+ * The coordinator sees who the sheet would add, who is on the elective already,
+ * and any roll number this class does not have, then adds them with
+ * enrollElectiveAction, so an imported list gets every check a hand-picked one
+ * does. A list only ever adds: nobody already on the elective is taken off.
+ *
+ * A workbook with a tab per elective opens on the tab named for this subject,
+ * else on the first tab with a roll number on it.
+ */
+export async function readElectiveListAction(form: FormData): Promise<
+  Result & {
+    list?: {
+      sheetNames: string[]
+      activeSheet: string
+      add: ListedStudent[]
+      already: ListedStudent[]
+      notInClass: string[]
+    }
+  }
+> {
+  try {
+    const user = await getSessionUser()
+    authorize(user, "offering:update")
+    const file = form.get("file")
+    if (!(file instanceof File)) return { error: "Choose a file to import." }
+    const offeringId = form.get("offeringId")
+    if (typeof offeringId !== "string" || !offeringId) {
+      return { error: "No such subject." }
+    }
+    const offering = await getOfferingById(offeringId)
+    if (!offering) return { error: "No such subject." }
+    const { ok, cls } = await classInScope(user!, offering.classId)
+    if (!ok || !cls) return { error: "That class is not in your scope." }
+    if (!canAllocate(user!, offering.classId, cls.departmentCode)) {
+      return { error: ELECTIVE_OWNER }
+    }
+    if (!offering.isElective) {
+      return {
+        error:
+          "This subject is taught to the whole class. Make it an elective first.",
+      }
+    }
+
+    const sheets = await readSheets(file)
+    if (sheets.length === 0) return { error: "That file has no sheets." }
+    const names = sheets.map((s) => s.name)
+    const named = sheetForSubject(names, offering.course.courseCode)
+    const requested = form.get("sheet")
+    const sheet =
+      sheets.find((s) => s.name === requested) ??
+      sheets.find((s) => s.name === named) ??
+      sheets.find((s) => rollsInSheet(s.grid).length > 0) ??
+      sheets[0]
+
+    const [roster, members] = await Promise.all([
+      getStudentsByClassKeys([cls.classKey]),
+      getElectiveMemberIds(offering.id),
+    ])
+    const { add, already, notInClass } = matchElectiveList(
+      rollsInSheet(sheet.grid),
+      roster.map((s) => ({
+        id: s.id,
+        rollNumber: s.rollNumber,
+        name: `${s.firstName} ${s.lastName}`.trim(),
+      })),
+      members
+    )
+    return {
+      error: null,
+      list: {
+        sheetNames: names,
+        activeSheet: sheet.name,
+        add,
+        already,
+        notInClass,
+      },
+    }
+  } catch (err) {
+    return { error: getErrorMessage(err, "Could not read that file") }
   }
 }
 

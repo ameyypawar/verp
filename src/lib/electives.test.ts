@@ -3,8 +3,11 @@ import {
   batchPlacesToRestore,
   emptyRosterMessage,
   hasRecordedMark,
+  matchElectiveList,
   offeringRoster,
+  rollsInSheet,
   rosterFrozenReason,
+  sheetForSubject,
   studentsWithMarks,
   type BatchPlace,
 } from "./electives"
@@ -215,5 +218,61 @@ describe("batchPlacesToRestore", () => {
       place("b2", "b", 0, { isActive: true }),
     ]
     expect(batchPlacesToRestore(places)).toEqual(["a1"])
+  })
+})
+
+describe("rollsInSheet", () => {
+  // Whatever shape the form that collected the choices left behind.
+  it("finds the roll numbers wherever they sit, once each, in sheet order", () => {
+    const grid = [
+      ["Students who chose Cloud Computing"],
+      ["Roll No", "Name"],
+      ["23108A0012", "Neha"],
+      ["", "23108a 0003", "Omkar"],
+      ["23108A0012", "Neha again"],
+      ["CLASS", "BE EXCS A"],
+    ]
+    expect(rollsInSheet(grid)).toEqual(["23108A0012", "23108A0003"])
+  })
+
+  it("is empty for a sheet with no roll numbers on it", () => {
+    expect(rollsInSheet([["Instructions"], ["Fill in the form"]])).toEqual([])
+  })
+})
+
+describe("matchElectiveList", () => {
+  const cls = [
+    { id: "a", rollNumber: "23108A0001" },
+    { id: "b", rollNumber: "23108A0002" },
+    { id: "c", rollNumber: "23108A0003" },
+  ]
+
+  it("sorts a list into who it adds, who is on already, and who the class lacks", () => {
+    const res = matchElectiveList(
+      ["23108A0003", "23108B0009", "23108A0001"],
+      cls,
+      new Set(["a"])
+    )
+    expect(res.add.map((s) => s.id)).toEqual(["c"])
+    expect(res.already.map((s) => s.id)).toEqual(["a"])
+    expect(res.notInClass).toEqual(["23108B0009"])
+  })
+
+  it("lists the students in the class's roll order, not the sheet's", () => {
+    const res = matchElectiveList(["23108A0003", "23108A0001"], cls, new Set())
+    expect(res.add.map((s) => s.id)).toEqual(["a", "c"])
+  })
+})
+
+describe("sheetForSubject", () => {
+  // A workbook with a tab per elective opens on this subject's tab.
+  it("finds the tab named for the subject", () => {
+    expect(
+      sheetForSubject(["Instructions", "ec37t cloud", "EC38T"], "EC37T")
+    ).toBe("ec37t cloud")
+  })
+
+  it("is null when no tab names it", () => {
+    expect(sheetForSubject(["Sheet1"], "EC37T")).toBeNull()
   })
 })

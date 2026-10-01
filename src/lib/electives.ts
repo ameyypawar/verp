@@ -13,6 +13,7 @@
 
 import type { MarksInput } from "@/lib/sgpi"
 import type { Component } from "@/lib/marks-integrity"
+import { looksLikeRoll } from "@/lib/roll-number"
 
 const idOf = (s: string | { id: string }) => (typeof s === "string" ? s : s.id)
 
@@ -140,4 +141,60 @@ export function batchPlacesToRestore(places: readonly BatchPlace[]): string[] {
     if (!seen || p.updatedAt > seen.updatedAt) last.set(p.studentId, p)
   }
   return [...last.values()].filter((p) => p.batchActive).map((p) => p.id)
+}
+
+/**
+ * The roll numbers in a sheet, in the order they first appear. Any cell shaped
+ * like a roll counts, wherever it sits, so a list arrives in whatever shape the
+ * form that collected it left: a title row, a header, a name beside each roll.
+ */
+export function rollsInSheet(
+  grid: readonly (readonly (string | undefined)[])[]
+): string[] {
+  const rolls = new Set<string>()
+  for (const row of grid) {
+    for (const cell of row) {
+      const roll = (cell ?? "").replace(/\s/g, "").toUpperCase()
+      if (looksLikeRoll(roll)) rolls.add(roll)
+    }
+  }
+  return [...rolls]
+}
+
+/**
+ * An imported list sorted against the class: who it would add, who is on the
+ * elective already, and the roll numbers the class does not have (another
+ * division, or a typo), which are reported and never added. The students come
+ * back in the class's roll order, like both lists on the Electives tab.
+ */
+export function matchElectiveList<T extends { id: string; rollNumber: string }>(
+  rolls: readonly string[],
+  classRoster: readonly T[],
+  members: ReadonlySet<string>
+): { add: T[]; already: T[]; notInClass: string[] } {
+  const listed = new Set(rolls)
+  const found = new Set<string>()
+  const add: T[] = []
+  const already: T[] = []
+  for (const student of classRoster) {
+    const roll = student.rollNumber.toUpperCase()
+    if (!listed.has(roll)) continue
+    found.add(roll)
+    if (members.has(student.id)) already.push(student)
+    else add.push(student)
+  }
+  return { add, already, notInClass: rolls.filter((r) => !found.has(r)) }
+}
+
+/**
+ * The tab of a workbook that holds one subject's list, when a tab is named for
+ * it ("EC37T", "EC37T Cloud Computing"). Null when none is.
+ */
+export function sheetForSubject(
+  sheetNames: readonly string[],
+  courseCode: string
+): string | null {
+  const squash = (s: string) => s.replace(/\s/g, "").toUpperCase()
+  const code = squash(courseCode)
+  return sheetNames.find((name) => squash(name).includes(code)) ?? null
 }
